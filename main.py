@@ -52,10 +52,10 @@ class PowerMonitor:
     def format_text(self, watts):
         if watts is None:
             return "N/A"
-        return f"{int(watts)}W" if watts >= 10 else f"{watts:.1f}W"
-
-    def render_icon_to_file(self, text, path):
-        """Render a wattage icon and save it as a PNG to a file path."""
+        return f"{int(watts)}W"
+    
+    def _render_pixmap(self, text):
+        """Render the wattage text onto a QPixmap."""
         size = 64
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -74,31 +74,16 @@ class PowerMonitor:
         painter.setFont(font)
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, text)
         painter.end()
+        return pixmap
 
+    def render_icon_to_file(self, text, path):
+        """Render a wattage icon and save it as a PNG to a file path."""
+        pixmap = self._render_pixmap(text)
         pixmap.save(path, "PNG")
 
     def render_icon(self, text):
         """Render a wattage icon and return a QIcon."""
-        size = 64
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-
-        app = QApplication.instance()
-        text_color = app.palette().color(QPalette.ColorRole.WindowText)
-        painter.setPen(text_color)
-
-        font = QFont("Arial", 22, QFont.Weight.Bold)
-        if len(text) > 3:
-            font.setPointSize(16)
-        painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, text)
-        painter.end()
-
-        return QIcon(pixmap)
+        return QIcon(self._render_pixmap(text))
 
 
 class GnomeTrayIcon:
