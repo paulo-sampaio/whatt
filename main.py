@@ -24,30 +24,51 @@ class PowerMonitor:
     """Shared logic: reading watts, rendering icons."""
 
     def __init__(self):
-        self.power_file = self.find_power_file()
-        if not self.power_file:
-            print("Could not find power_now in /sys/class/power_supply/")
-
-    def find_power_file(self):
-        base = "/sys/class/power_supply"
-        try:
-            for name in sorted(os.listdir(base)):
-                candidate = os.path.join(base, name, "power_now")
-                if os.path.exists(candidate):
-                    return candidate
-        except OSError:
-            pass
-        return None
+        self.base_path = "/sys/class/power_supply"
 
     def get_watts(self):
-        if not self.power_file or not os.path.exists(self.power_file):
+        if not os.path.exists(self.base_path):
             return None
+
+        total_power_uw = 0
+        found_battery = False
+
         try:
-            with open(self.power_file, 'r') as f:
-                return int(f.read().strip()) / 1_000_000.0
-        except Exception as e:
-            print(f"Error reading power: {e}")
+            for name in os.listdir(self.base_path):
+                path = os.path.join(self.base_path, name)
+                type_file = os.path.join(path, "type")
+                
+                if not os.path.exists(type_file):
+                    continue
+                    
+                with open(type_file, 'r') as f:
+                    if f.read().strip() != "Battery":
+                        continue
+                
+                found_battery = True
+                power_now_file = os.path.join(path, "power_now")
+                current_now_file = os.path.join(path, "current_now")
+                voltage_now_file = os.path.join(path, "voltage_now")
+                
+                try:
+                    if os.path.exists(power_now_file):
+                        with open(power_now_file, 'r') as f:
+                            total_power_uw += int(f.read().strip())
+                    elif os.path.exists(current_now_file) and os.path.exists(voltage_now_file):
+                        with open(current_now_file, 'r') as f:
+                            current_ua = int(f.read().strip())
+                        with open(voltage_now_file, 'r') as f:
+                            voltage_uv = int(f.read().strip())
+                        total_power_uw += (current_ua * voltage_uv) // 1_000_000
+                except Exception as e:
+                    print(f"Error reading power for {name}: {e}")
+        except OSError:
+            pass
+
+        if not found_battery:
             return None
+
+        return total_power_uw / 1_000_000.0
 
     def format_text(self, watts):
         if watts is None:
