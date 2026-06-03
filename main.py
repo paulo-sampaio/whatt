@@ -2,7 +2,7 @@ import sys
 import os
 import tempfile
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QFont, QPalette
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QFont, QPalette, QColor
 from PyQt6.QtCore import QTimer, Qt
 
 # Try to import AppIndicator3 for GNOME
@@ -70,12 +70,44 @@ class PowerMonitor:
 
         return total_power_uw / 1_000_000.0
 
+    def get_status(self):
+        if not os.path.exists(self.base_path):
+            return "Unknown"
+
+        status_set = set()
+        try:
+            for name in os.listdir(self.base_path):
+                path = os.path.join(self.base_path, name)
+                type_file = os.path.join(path, "type")
+                
+                if not os.path.exists(type_file):
+                    continue
+                    
+                with open(type_file, 'r') as f:
+                    if f.read().strip() != "Battery":
+                        continue
+                
+                status_file = os.path.join(path, "status")
+                if os.path.exists(status_file):
+                    with open(status_file, 'r') as f:
+                        status_set.add(f.read().strip())
+        except OSError:
+            pass
+
+        if "Charging" in status_set:
+            return "Charging"
+        elif "Discharging" in status_set:
+            return "Discharging"
+        elif "Full" in status_set:
+            return "Full"
+        return "Unknown"
+
     def format_text(self, watts):
         if watts is None:
             return "N/A"
         return f"{int(watts)}W"
     
-    def _render_pixmap(self, text):
+    def _render_pixmap(self, text, status="Unknown"):
         """Render the wattage text onto a QPixmap."""
         size = 64
         pixmap = QPixmap(size, size)
@@ -87,9 +119,17 @@ class PowerMonitor:
 
         app = QApplication.instance()
         text_color = app.palette().color(QPalette.ColorRole.WindowText)
+        
+        if status == "Charging":
+            text_color = QColor("#A8E6CF")  # Light pastel green
+        elif status == "Discharging":
+            text_color = QColor("#FF8B94")  # Light pastel red
+
         painter.setPen(text_color)
 
-        font = QFont("Arial", 22, QFont.Weight.Bold)
+        font = app.font()
+        font.setWeight(QFont.Weight.Bold)
+        font.setPointSize(22)
         if len(text) > 3:
             font.setPointSize(16)
         painter.setFont(font)
@@ -97,14 +137,14 @@ class PowerMonitor:
         painter.end()
         return pixmap
 
-    def render_icon_to_file(self, text, path):
+    def render_icon_to_file(self, text, path, status="Unknown"):
         """Render a wattage icon and save it as a PNG to a file path."""
-        pixmap = self._render_pixmap(text)
+        pixmap = self._render_pixmap(text, status)
         pixmap.save(path, "PNG")
 
-    def render_icon(self, text):
+    def render_icon(self, text, status="Unknown"):
         """Render a wattage icon and return a QIcon."""
-        return QIcon(self._render_pixmap(text))
+        return QIcon(self._render_pixmap(text, status))
 
 
 class GnomeTrayIcon:
@@ -143,7 +183,8 @@ class GnomeTrayIcon:
     def update(self):
         watts = self.monitor.get_watts()
         text = self.monitor.format_text(watts)
-        self.monitor.render_icon_to_file(text, self._icon_path)
+        status = self.monitor.get_status()
+        self.monitor.render_icon_to_file(text, self._icon_path, status)
         # Force AppIndicator3 to reload the icon from disk
         self.indicator.set_icon_full(self._icon_path, text)
 
@@ -178,13 +219,14 @@ class KdeTrayIcon(QSystemTrayIcon):
     def update_icon(self):
         watts = self.monitor.get_watts()
         text = self.monitor.format_text(watts)
+        status = self.monitor.get_status()
 
         if watts is not None:
-            self.setToolTip(f"Power Consumption: {watts:.2f} W")
+            self.setToolTip(f"Power Consumption: {watts:.2f} W ({status})")
         else:
             self.setToolTip("Power Consumption: Not Available")
 
-        self.setIcon(self.monitor.render_icon(text))
+        self.setIcon(self.monitor.render_icon(text, status))
 
 
 def main():
